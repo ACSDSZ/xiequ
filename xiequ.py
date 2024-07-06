@@ -1,5 +1,6 @@
-ACSDSZ/ChatGPT-Next-Web# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 '''
+基于https://github.com/dsmggm/proxy/blob/main/xiequ.py修改
 脚本用于携趣的自动添加公网ip白名单
 添加变量名=xiequ_uid_ukey    变量值=备注#uid#ukey
 多账户换行
