@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 '''
-基于https://github.com/dsmggm/proxy/blob/main/xiequ.py修改
+7.26所有原本直接使用 requests.get 的地方都改为使用 session.get，并添加了重试逻辑
 脚本用于携趣的自动添加公网ip白名单
 添加变量名=xiequ_uid_ukey    变量值=备注#uid#ukey
 多账户换行
@@ -12,10 +12,19 @@ new Env('携趣白名单');
 import requests
 import os
 import asyncio
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
+session = requests.Session()
+retries = Retry(total=5,
+                backoff_factor=0.1,
+                status_forcelist=[500, 502, 503, 504])
+
+session.mount('http://', HTTPAdapter(max_retries=retries))
 
 async def get_public_ip():
     print('开始获取当前公网')
-    response = requests.get('https://qifu-api.baidubce.com/ip/local/geo/v1/district')
+    response = session.get('https://qifu-api.baidubce.com/ip/local/geo/v1/district')
     if response.status_code == 200:
         data = response.json()
         if data['code'] == 'Success':
@@ -34,7 +43,7 @@ async def env_init(ip):     # 获取环境变量
         print("没有找到xiequ_uid_ukey变量")
 
 async def del_all_ip(ip, username, uid, ukey):  # 删除所有IP网址
-    response = requests.get(f"http://op.xiequ.cn/IpWhiteList.aspx?uid={uid}&ukey={ukey}&act=del&ip=all")
+    response = session.get(f"http://op.xiequ.cn/IpWhiteList.aspx?uid={uid}&ukey={ukey}&act=del&ip=all")
     if response.status_code == 200:
         print(f"{username} 清空白名单成功")
     else:
@@ -44,7 +53,7 @@ async def add_ip(ip, username, uid, ukey):
     # 拼接带有IP参数的网址
     url_with_ip = f"http://op.xiequ.cn/IpWhiteList.aspx?uid={uid}&ukey={ukey}&act=add&ip={ip}"
     # 打开带有IP参数的网址
-    response_with_ip = requests.get(url_with_ip)
+    response_with_ip = session.get(url_with_ip)
     if response_with_ip.status_code == 200:
         print(f"{username} 白名单添加成功")
     else:
