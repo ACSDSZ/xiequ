@@ -13,7 +13,6 @@ import os
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-# --- 全局 session 设置 ---
 session = requests.Session()
 retries = Retry(total=5,
                 backoff_factor=0.2,
@@ -23,22 +22,32 @@ session.mount('https://', HTTPAdapter(max_retries=retries))
 
 
 def get_public_ip():
-    """尝试从多个稳定的API获取公网IP地址。"""
     print('开始获取当前公网IP...')
     ip_services = [
         'https://api.ipify.org',
+        'https://ip.user-agent.cn/json',
         'http://ipinfo.io/ip',
         'http://icanhazip.com'
     ]
+
     for service_url in ip_services:
         try:
             print(f"尝试从 {service_url} 获取IP...")
             response = session.get(service_url, timeout=5)
-            response.raise_for_status() 
-            ip = response.text.strip()
-            if '.' in ip and len(ip) > 6:
-                print(f"成功获取到公网IP: {ip}")
-                return ip
+            response.raise_for_status()
+            
+            try:
+                data = response.json()
+                ip = data.get('ip')
+                if ip and isinstance(ip, str):
+                    print(f"成功从JSON响应中解析到IP: {ip}")
+                    return ip
+            except requests.exceptions.JSONDecodeError:
+                ip = response.text.strip()
+                if '.' in ip and len(ip) > 6:
+                    print(f"成功从纯文本响应中获取到IP: {ip}")
+                    return ip
+
         except requests.exceptions.RequestException as e:
             print(f"从 {service_url} 获取IP失败: {e}")
             continue
@@ -64,7 +73,6 @@ def env_init(ip):
         print("没有找到环境变量 xiequ_uid_ukey")
 
 def del_all_ip(username, uid, ukey):
-    """清空指定账户的IP白名单。"""
     url = f"http://op.xiequ.cn/IpWhiteList.aspx?uid={uid}&ukey={ukey}&act=del&ip=all"
     try:
         response = session.get(url, timeout=10)
@@ -74,7 +82,6 @@ def del_all_ip(username, uid, ukey):
         print(f"账户[{username}] 清空白名单失败: {e}")
 
 def add_ip(ip, username, uid, ukey):
-    """为指定账户添加新的IP到白名单。"""
     url_with_ip = f"http://op.xiequ.cn/IpWhiteList.aspx?uid={uid}&ukey={ukey}&act=add&ip={ip}"
     try:
         response_with_ip = session.get(url_with_ip, timeout=10)
@@ -90,6 +97,5 @@ def main():
     else:
         print("无法获取公网IP，脚本执行中止。")
 
-# --- 主程序入口 ---
 if __name__ == "__main__":
     main()
