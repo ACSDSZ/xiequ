@@ -56,7 +56,6 @@ def get_public_ip():
     return None
 
 def env_init(ip):
-    """处理环境变量，并为每个账户更新IP白名单。"""
     uid_ukey_envs = os.environ.get("xiequ_uid_ukey")
     if uid_ukey_envs:
         uid_ukeys = uid_ukey_envs.splitlines()
