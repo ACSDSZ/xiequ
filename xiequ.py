@@ -24,10 +24,12 @@ session.mount('https://', HTTPAdapter(max_retries=retries))
 def get_public_ip():
     print('开始获取当前公网IP...')
     ip_services = [
-        'https://api.ipify.org',
-        'https://ip.user-agent.cn/json',
-        'http://ipinfo.io/ip',
-        'http://icanhazip.com'
+        'https://ddns.oray.com/checkip', # 返回 "Current IP Address: X.X.X.X"
+        'https://ip.sb',                 # 返回纯文本
+        'https://cip.cc',                # 返回纯文本
+        'http://ipinfo.io/ip',           # 备用，纯文本
+        'https://ip.user-agent.cn/json', # 备用，JSON格式
+        'https://api.ipify.org'          # 备用，纯文本
     ]
 
     for service_url in ip_services:
@@ -35,6 +37,12 @@ def get_public_ip():
             print(f"尝试从 {service_url} 获取IP...")
             response = session.get(service_url, timeout=5)
             response.raise_for_status()
+            ip_text = response.text.strip()
+            
+            if "Current IP Address:" in ip_text:
+                ip = ip_text.split(':')[-1].strip()
+                print(f"成功从Oray响应中解析到IP: {ip}")
+                return ip
             
             try:
                 data = response.json()
@@ -43,10 +51,9 @@ def get_public_ip():
                     print(f"成功从JSON响应中解析到IP: {ip}")
                     return ip
             except requests.exceptions.JSONDecodeError:
-                ip = response.text.strip()
-                if '.' in ip and len(ip) > 6:
-                    print(f"成功从纯文本响应中获取到IP: {ip}")
-                    return ip
+                if '.' in ip_text and len(ip_text) > 6:
+                    print(f"成功从纯文本响应中获取到IP: {ip_text}")
+                    return ip_text
 
         except requests.exceptions.RequestException as e:
             print(f"从 {service_url} 获取IP失败: {e}")
