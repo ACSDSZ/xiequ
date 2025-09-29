@@ -1,70 +1,95 @@
 # -*- coding: utf-8 -*-
 '''
-7.26所有原本直接使用 requests.get 的地方都改为使用 session.get，并添加了重试逻辑
 脚本用于携趣的自动添加公网ip白名单
 添加变量名=xiequ_uid_ukey    变量值=备注#uid#ukey
 多账户换行
-需要安装依赖asyncio、requests
+需要安装依赖requests
 cron: */30 * * * *
 new Env('携趣白名单');
 '''
 
 import requests
 import os
-import asyncio
 from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+from urllib3.util.retry import Retry
 
+# --- 全局 session 设置 ---
 session = requests.Session()
 retries = Retry(total=5,
-                backoff_factor=0.1,
+                backoff_factor=0.2,
                 status_forcelist=[500, 502, 503, 504])
-
 session.mount('http://', HTTPAdapter(max_retries=retries))
+session.mount('https://', HTTPAdapter(max_retries=retries))
 
-async def get_public_ip():
-    print('开始获取当前公网')
-    response = session.get('https://qifu-api.baidubce.com/ip/local/geo/v1/district')
-    if response.status_code == 200:
-        data = response.json()
-        if data['code'] == 'Success':
-            return data['ip']
+
+def get_public_ip():
+    """尝试从多个稳定的API获取公网IP地址。"""
+    print('开始获取当前公网IP...')
+    ip_services = [
+        'https://api.ipify.org',
+        'http://ipinfo.io/ip',
+        'http://icanhazip.com'
+    ]
+    for service_url in ip_services:
+        try:
+            print(f"尝试从 {service_url} 获取IP...")
+            response = session.get(service_url, timeout=5)
+            response.raise_for_status() 
+            ip = response.text.strip()
+            if '.' in ip and len(ip) > 6:
+                print(f"成功获取到公网IP: {ip}")
+                return ip
+        except requests.exceptions.RequestException as e:
+            print(f"从 {service_url} 获取IP失败: {e}")
+            continue
+
+    print("尝试了所有IP服务，均无法获取公网IP。")
     return None
 
-async def env_init(ip):     # 获取环境变量
+def env_init(ip):
+    """处理环境变量，并为每个账户更新IP白名单。"""
     uid_ukey_envs = os.environ.get("xiequ_uid_ukey")
     if uid_ukey_envs:
         uid_ukeys = uid_ukey_envs.splitlines()
+        print(f"检测到 {len(uid_ukeys)} 个账户，准备开始处理...")
         for uid_ukey in uid_ukeys:
-            username, uid, ukey = uid_ukey.split("#")
-            await del_all_ip(ip, username, uid, ukey)   # 删除所有ip
-            await add_ip(ip, username, uid, ukey)   # 添加白名单
+            if not uid_ukey: continue
+            try:
+                username, uid, ukey = uid_ukey.split("#")
+                del_all_ip(username, uid, ukey)
+                add_ip(ip, username, uid, ukey)
+            except ValueError:
+                print(f"环境变量格式错误，跳过此行: {uid_ukey}")
     else:
-        print("没有找到xiequ_uid_ukey变量")
+        print("没有找到环境变量 xiequ_uid_ukey")
 
-async def del_all_ip(ip, username, uid, ukey):  # 删除所有IP网址
-    response = session.get(f"http://op.xiequ.cn/IpWhiteList.aspx?uid={uid}&ukey={ukey}&act=del&ip=all")
-    if response.status_code == 200:
-        print(f"{username} 清空白名单成功")
-    else:
-        print(f"{username} 清空白名单失败，手动请求试试……")
+def del_all_ip(username, uid, ukey):
+    """清空指定账户的IP白名单。"""
+    url = f"http://op.xiequ.cn/IpWhiteList.aspx?uid={uid}&ukey={ukey}&act=del&ip=all"
+    try:
+        response = session.get(url, timeout=10)
+        response.raise_for_status()
+        print(f"账户[{username}] 清空白名单成功")
+    except requests.exceptions.RequestException as e:
+        print(f"账户[{username}] 清空白名单失败: {e}")
 
-async def add_ip(ip, username, uid, ukey): 
-    # 拼接带有IP参数的网址
+def add_ip(ip, username, uid, ukey):
+    """为指定账户添加新的IP到白名单。"""
     url_with_ip = f"http://op.xiequ.cn/IpWhiteList.aspx?uid={uid}&ukey={ukey}&act=add&ip={ip}"
-    # 打开带有IP参数的网址
-    response_with_ip = session.get(url_with_ip)
-    if response_with_ip.status_code == 200:
-        print(f"{username} 白名单添加成功")
-    else:
-        print(f"{username} 白名单添加失败，手动请求试试……")
+    try:
+        response_with_ip = session.get(url_with_ip, timeout=10)
+        response_with_ip.raise_for_status()
+        print(f"账户[{username}] 白名单添加成功，IP: {ip}")
+    except requests.exceptions.RequestException as e:
+        print(f"账户[{username}] 白名单添加失败: {e}")
 
-async def main():
-    ip = await get_public_ip()
+def main():
+    ip = get_public_ip()
     if ip:
-        print("当前公网IP地址是:", ip)
+        env_init(ip)
     else:
-        print("无法获取当前公网IP地址")
-    await env_init(ip)
+        print("无法获取公网IP，脚本执行中止。")
 
-asyncio.run(main())
+# --- 主程序入口 ---
+if __name__ == "__main__":
+    main()
